@@ -21,10 +21,6 @@ type TaskHandle interface {
 	Done(*TaskError) error
 }
 
-// Store is the persistent storage for jobs/tasks
-type Store interface {
-}
-
 // Dispatcher submits jobs and executes tasks
 type Dispatcher struct {
 	Strategy Strategy
