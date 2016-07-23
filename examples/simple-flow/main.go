@@ -11,14 +11,14 @@ type processObjParams struct {
 func createObj(ctx jobs.Context) error {
 	var params processObjParams
 	if err := ctx.GetParams(&params); err != nil {
-		return err
+		return ctx.Fail(err)
 	}
 	for _, component := range params.Components {
 		_, err := ctx.NewTask("make-component").
 			With(component).
 			Submit()
 		if err != nil {
-			return err
+			return ctx.Fail(err)
 		}
 	}
 	return ctx.ResumeTo("process")
@@ -27,13 +27,13 @@ func createObj(ctx jobs.Context) error {
 func processObj(ctx jobs.Context) error {
 	subTasks, err := ctx.SubTasks()
 	if err != nil {
-		return err
+		return ctx.FailRetry(err)
 	}
 	var output []string
 	for _, t := range subTasks {
 		var out string
 		if err = t.GetOutput(&out); err != nil {
-			return err
+			return ctx.Fail(err)
 		}
 		output = append(output, out)
 	}
@@ -43,11 +43,11 @@ func processObj(ctx jobs.Context) error {
 func makeComponent(ctx jobs.Context) error {
 	var component string
 	if err := ctx.GetParams(&component); err != nil {
-		return err
+		return ctx.Fail(err)
 	}
 	output := component + ":done"
 	if err := ctx.SetOutput(output); err != nil {
-		return err
+		return ctx.Fail(err)
 	}
 	return nil
 }

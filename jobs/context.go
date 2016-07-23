@@ -4,6 +4,8 @@ import "encoding/json"
 
 // Context provides the context for a running task
 type Context struct {
+	strategy   WorkerStrategy
+	taskHandle TaskHandle
 }
 
 // JobID retrieves the current job id
@@ -14,6 +16,17 @@ func (c Context) JobID() string {
 // TaskID retrieves the current task id
 func (c Context) TaskID() string {
 	return c.Current().ID
+}
+
+// IsRollback determines if the task is in rollback direction
+func (c Context) IsRollback() bool {
+	return c.Current().Revert
+}
+
+// IsCanceling determines if cancellation is requested
+func (c Context) IsCanceling() bool {
+	// TODO
+	return false
 }
 
 // Current returns a copy of current task
@@ -58,6 +71,30 @@ func (c Context) ResumeTo(stage string) error {
 // NewTask starts creating a new sub task
 func (c Context) NewTask(name string) *TaskBuilder {
 	return &TaskBuilder{Submitter: c, Name: name}
+}
+
+// Fail creates a task error
+func (c Context) Fail(err error) *TaskError {
+	t := c.Current()
+	return t.NewError(TaskErrFail).SetMessage("failed").CausedBy(err)
+}
+
+// FailRetry creates a task error with retry
+func (c Context) FailRetry(err error) *TaskError {
+	t := c.Current()
+	return t.NewError(TaskErrRetry).SetMessage("error").CausedBy(err)
+}
+
+// FailRollback creates a task error and rollback
+func (c Context) FailRollback(err error) *TaskError {
+	t := c.Current()
+	return t.NewError(TaskErrRevert).SetMessage("error, rollback").CausedBy(err)
+}
+
+// Stuck creates a stuck error
+func (c Context) Stuck(err error) *TaskError {
+	t := c.Current()
+	return t.NewError(TaskErrStuck).SetMessage("stucked!!").CausedBy(err)
 }
 
 // SubmitTask implements TaskSubmitter

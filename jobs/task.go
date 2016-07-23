@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -14,37 +15,108 @@ const (
 	TaskPending                    // task is ready for execution
 	TaskRunning                    // task is running
 	TaskWaiting                    // task is waiting for sub-tasks
-	TaskReverting                  // canceling/rolling back
 	TaskStucked                    // error state, unable to retry or rollback
-	TaskSuccess                    // task completed successfully
-	TaskFailure                    // task completed but failed
-	TaskAborted                    // task is canceled/rolled back
+	TaskCompleted                  // task completed
+)
+
+// TaskResult is the result when task is completed
+type TaskResult int
+
+// Task results
+const (
+	TaskSuccess TaskResult = iota
+	TaskFailure
+	TaskAborted
+)
+
+// TaskErrorType indicates the error type
+type TaskErrorType int
+
+// Task error types
+const (
+	TaskErrIgnored TaskErrorType = iota // no error, same as success
+	TaskErrFail
+	TaskErrRetry
+	TaskErrRevert
+	TaskErrStuck
 )
 
 // TaskError is the type for error when task failed
 type TaskError struct {
-	Type       string    `json:"type"`        // error type
-	Message    string    `json:"message"`     // error Message
-	Output     []byte    `json:"output"`      // arbitrary output
-	HappenedAt time.Time `json:"happened-at"` // time when task failed
+	TaskID     string        `json:"task-id"`     // task id
+	Type       TaskErrorType `json:"type"`        // error type
+	Message    string        `json:"message"`     // error Message
+	Output     []byte        `json:"output"`      // arbitrary output
+	Cause      error         `json:"cause"`       // cause of the error
+	HappenedAt time.Time     `json:"happened-at"` // time when task failed
+}
+
+// NewTaskError constructs a TaskError
+func NewTaskError(taskID string, errType TaskErrorType) *TaskError {
+	return &TaskError{
+		TaskID:     taskID,
+		Type:       errType,
+		HappenedAt: time.Now(),
+	}
+}
+
+// SetMessage sets the message
+func (e *TaskError) SetMessage(msg string) *TaskError {
+	e.Message = msg
+	return e
+}
+
+// SetOutput sets the output of the error
+func (e *TaskError) SetOutput(output []byte) *TaskError {
+	e.Output = output
+	return e
+}
+
+// CausedBy sets the cause
+func (e *TaskError) CausedBy(err error) *TaskError {
+	e.Cause = err
+	return e
+}
+
+// Error implements error
+func (e *TaskError) Error() string {
+	msg := fmt.Sprintf("Task[%s]: %d: %s @%s",
+		e.TaskID, e.Type, e.Message, e.HappenedAt.Format(time.RFC3339))
+	if e.Cause != nil {
+		msg += "\nCaused by: " + e.Cause.Error()
+	}
+	if e.Output != nil {
+		msg += "\nOutput:\n" + string(e.Output)
+	}
+	return msg
+}
+
+// TaskStats contains the runtime information
+type TaskStats struct {
+	WorkerID    string    `json:"worker-id"`    // assign to a worker
+	ScheduledAt time.Time `json:"scheduled-at"` // scheduled exec time
+	ExpireAt    time.Time `json:"expire-at"`    // expiration
 }
 
 // Task defines the details of a task`
 type Task struct {
-	ID        string        `json:"id"`         // globally unique task id
-	ParentID  string        `json:"parent-id"`  // parent task id
-	JobID     string        `json:"job-id"`     // job id
-	Name      string        `json:"name"`       // task name
-	Params    []byte        `json:"params"`     // encoded parameters
-	Timeout   time.Duration `json:"timeout"`    // heartbeat Timeout
-	State     TaskState     `json:"state"`      // current state
-	Retries   uint          `json:"retries"`    // current retry number
-	Stage     string        `json:"stage"`      // stage resume to
-	Data      []byte        `json:"data"`       // task specific data
-	Output    []byte        `json:"output"`     // output when completed
-	Errors    []TaskError   `json:"errors"`     // errors happened
-	CreatedAt time.Time     `json:"created-at"` // task creation time
-	UpdatedAt time.Time     `json:"updated-at"` // last modification time
+	ID         string      `json:"id"`          // globally unique task id
+	ParentID   string      `json:"parent-id"`   // parent task id
+	JobID      string      `json:"job-id"`      // job id
+	Name       string      `json:"name"`        // task name
+	Params     []byte      `json:"params"`      // encoded parameters
+	State      TaskState   `json:"state"`       // current state
+	Result     TaskResult  `json:"result"`      // result when task completes
+	Revert     bool        `json:"revert"`      // in rollback direction
+	Retries    uint        `json:"retries"`     // current retry number
+	MaxRetries uint        `json:"max-retries"` // max count of retries
+	Stage      string      `json:"stage"`       // stage resume to
+	Data       []byte      `json:"data"`        // task specific data
+	Output     []byte      `json:"output"`      // output when completed
+	Errors     []TaskError `json:"errors"`      // errors happened
+	CreatedAt  time.Time   `json:"created-at"`  // task creation time
+	UpdatedAt  time.Time   `json:"updated-at"`  // last modification time
+	Stats      *TaskStats  `json:"stats"`       // runtime stats
 }
 
 // GetParams extracts the parameters
@@ -92,6 +164,11 @@ func (t *Task) SetOutput(p interface{}) *Task {
 	}
 	t.Output = encoded
 	return t
+}
+
+// NewError constructs a TaskError
+func (t *Task) NewError(errType TaskErrorType) *TaskError {
+	return NewTaskError(t.ID, errType)
 }
 
 // TaskSubmitter defines the contract which submits a task
