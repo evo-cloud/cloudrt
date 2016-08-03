@@ -1,6 +1,9 @@
 package jobs
 
-import "time"
+import (
+	"hash/crc32"
+	"time"
+)
 
 // EnumOptions defines the options for enumerators
 type EnumOptions struct {
@@ -64,4 +67,14 @@ type Store interface {
 	OrderedList(name string) OrderedList
 	// Acquire acquires a lock
 	Acquire(name, ownerID string) Acquisition
+}
+
+const (
+	// Partitions is the total number of partitions
+	Partitions = 4096
+)
+
+// Partition maps id into a partition
+func Partition(id string) int {
+	return int(crc32.ChecksumIEEE([]byte(id)) % Partitions)
 }
