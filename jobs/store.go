@@ -36,6 +36,12 @@ type KeyValueStore interface {
 	Remove(key string) (Value, error)
 }
 
+// KeySet is a set of keys
+type KeySet interface {
+	Set(id string, exist bool) error
+	Has(id string) (bool, error)
+}
+
 // PartitionedStore is the store partitions key/value pairs
 // EnumOptions.Partition is used to scan keys
 type PartitionedStore interface {
@@ -56,7 +62,7 @@ type Acquisition interface {
 // keys are inserted
 type OrderedList interface {
 	Enumerable
-	KeyValueStore
+	KeySet
 }
 
 // Store is the persistent storage for jobs/tasks
@@ -70,6 +76,10 @@ type Store interface {
 }
 
 const (
+	// Infinite disables ttl
+	Infinite = time.Duration(-1)
+	// NoTTL is equivalent to Infinite
+	NoTTL = Infinite
 	// Partitions is the total number of partitions
 	Partitions = 4096
 )
