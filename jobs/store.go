@@ -55,7 +55,7 @@ type Acquisition interface {
 	Owner() string
 	TTL() time.Duration
 	Refresh(ttl time.Duration) error
-	Release()
+	Release() error
 }
 
 // OrderedList is an enumerable list which obeys the order when
@@ -72,7 +72,7 @@ type Store interface {
 	// OrderedList obtains a handle to an ordered list
 	OrderedList(name string) OrderedList
 	// Acquire acquires a lock
-	Acquire(name, ownerID string) Acquisition
+	Acquire(name, ownerID string) (Acquisition, error)
 }
 
 const (
