@@ -116,6 +116,7 @@ type Task struct {
 	Errors     []TaskError `json:"errors"`      // errors happened
 	CreatedAt  time.Time   `json:"created-at"`  // task creation time
 	UpdatedAt  time.Time   `json:"updated-at"`  // last modification time
+	SubTaskIDs []string    `json:"subtask-ids"` // subtask ID list
 	Stats      *TaskStats  `json:"stats"`       // runtime stats
 }
 

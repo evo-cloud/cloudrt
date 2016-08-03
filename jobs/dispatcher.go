@@ -5,7 +5,7 @@ import "fmt"
 // Strategy is the contract for scheduling strategy
 type Strategy interface {
 	SubmitJob(*Job) error
-	NewWorker() WorkerStrategy
+	NewWorker(id string) WorkerStrategy
 }
 
 // WorkerStrategy is strategy instance per worker

@@ -1,5 +1,7 @@
 package jobs
 
+import "time"
+
 // EnumOptions defines the options for enumerators
 type EnumOptions struct {
 	PageSize  int
@@ -14,6 +16,7 @@ type Enumerable interface {
 // Value is abstract form of stored object
 type Value interface {
 	Valid() bool
+	TTL() time.Duration
 	Unmarshal(out interface{}) error
 }
 
@@ -24,8 +27,9 @@ type Enumerator interface {
 
 // KeyValueStore is simple K/V store
 type KeyValueStore interface {
-	Put(key string, value interface{}) error
+	Put(key string, value interface{}, ttl time.Duration) error
 	Get(key string) (Value, error)
+	Expire(key string, ttl time.Duration) error
 	Remove(key string) (Value, error)
 }
 
@@ -40,8 +44,8 @@ type PartitionedStore interface {
 type Acquisition interface {
 	Acquired() bool
 	Owner() string
-	TTL() int
-	Refresh() error
+	TTL() time.Duration
+	Refresh(ttl time.Duration) error
 	Release()
 }
 
@@ -59,5 +63,5 @@ type Store interface {
 	// OrderedList obtains a handle to an ordered list
 	OrderedList(name string) OrderedList
 	// Acquire acquires a lock
-	Acquire(name string) Acquisition
+	Acquire(name, ownerID string) Acquisition
 }
