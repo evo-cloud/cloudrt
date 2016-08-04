@@ -1,7 +1,12 @@
 package main
 
 import (
+	"fmt"
+	"sync"
+
 	jobs "github.com/evo-cloud/cloudrt/jobs"
+	store "github.com/evo-cloud/cloudrt/jobs/stores/redis"
+	strategy "github.com/evo-cloud/cloudrt/jobs/strategies/simple"
 )
 
 type processObjParams struct {
@@ -52,10 +57,12 @@ func makeComponent(ctx jobs.Context) error {
 	return nil
 }
 
-type dummyStore struct{}
-
 func main() {
-	dispatcher := &jobs.Dispatcher{Store: &dummyStore{}}
+	dispatcher := &jobs.Dispatcher{
+		Strategy: &strategy.Strategy{
+			Store: store.NewStore("localhost"),
+		},
+	}
 
 	// register task executors
 	dispatcher.AddTaskExecs(
@@ -73,9 +80,14 @@ func main() {
 	)
 
 	// start 4 workers
+	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
-		worker := dispatcher.Worker()
-		go worker.Run()
+		worker := dispatcher.Worker(fmt.Sprintf("worker%d", i))
+		wg.Add(1)
+		go func() {
+			worker.Run()
+			wg.Done()
+		}()
 	}
 
 	dispatcher.NewJob().
@@ -84,5 +96,6 @@ func main() {
 			With(&processObjParams{Components: []string{"red", "blue", "green"}}).
 			Build()).
 		Submit()
-	dispatcher.Wait()
+
+	wg.Wait()
 }

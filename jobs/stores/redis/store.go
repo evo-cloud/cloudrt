@@ -48,7 +48,7 @@ func NewStore(server string) *Store {
 
 // Bucket implements Store
 func (s *Store) Bucket(name string) jobs.PartitionedStore {
-	return &bucket{prefix: name + ":", store: s}
+	return &bucket{prefix: "b:" + name + ":", store: s}
 }
 
 // OrderedList implements Store
@@ -71,10 +71,6 @@ type value struct {
 	ttl  time.Duration
 }
 
-func (v *value) Valid() bool {
-	return v.data != ""
-}
-
 func (v *value) TTL() time.Duration {
 	return v.ttl
 }
@@ -87,9 +83,9 @@ func ttl2Dur(ttl int64, err error) time.Duration {
 	if err != nil || ttl < 0 {
 		return jobs.NoTTL
 	}
-	return ttl * time.Millisecond
+	return time.Duration(ttl) * time.Millisecond
 }
 
 func dur2TTL(dur time.Duration) int64 {
-	return dur / time.Millisecond
+	return int64(dur / time.Millisecond)
 }

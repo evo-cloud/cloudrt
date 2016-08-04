@@ -1,0 +1,22 @@
+sudo: required
+
+language: go
+go:
+    - 1.6
+    - tip
+
+services:
+    - docker
+
+env:
+    global:
+        - DOCKER_VERSION=1.10.1-0~trusty
+
+before_install:
+    - apt-cache madison docker-engine
+    - sudo apt-get -o Dpkg::Options::="--force-confnew" install -y docker-engine=${DOCKER_VERSION}
+    - curl -sSL https://github.com/evo-cloud/hmake/releases/download/v1.1.0rc1/hmake-linux-amd64.tar.gz | sudo tar -C /usr/local/bin -xz
+
+script:
+    - docker version
+    - hmake check build -sv

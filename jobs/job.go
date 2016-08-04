@@ -1,22 +1,14 @@
 package jobs
 
-// JobState defines the state of the job
-type JobState int
-
-// Job states
-const (
-	JobCreated  JobState = iota // Job is created and ready for run
-	JobRunning                  // Job is running
-	JobStucked                  // Some of the job is stucked
-	JobFinished                 // Job completed
-)
+import "time"
 
 // Job defines the details of a job
 type Job struct {
-	ID    string   `json:"id"`    // globally unique job id
-	Name  string   `json:"name"`  // job name, optionally
-	Task  *Task    `json:"task"`  // the entry task
-	State JobState `json:"state"` // current job state
+	ID        string    `json:"id"`         // globally unique job id
+	Name      string    `json:"name"`       // job name, optionally
+	Task      *Task     `json:"task"`       // the entry task
+	CreatedAt time.Time `json:"created-at"` // job creation time
+	UpdatedAt time.Time `json:"updated-at"` // last updated time
 }
 
 // JobSubmitter defines the contract which submits a job
@@ -61,5 +53,9 @@ func (b *JobBuilder) Submit() (*Job, error) {
 		// TODO generate ID
 	}
 	job.Task.JobID = job.ID
+	job.Task.CreatedAt = time.Now()
+	job.Task.UpdatedAt = job.Task.CreatedAt
+	job.CreatedAt = job.Task.CreatedAt
+	job.UpdatedAt = job.CreatedAt
 	return job, b.Submitter.SubmitJob(job)
 }

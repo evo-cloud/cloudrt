@@ -77,7 +77,7 @@ func (l *orderedList) Set(id string, exist bool) (err error) {
 	conn := l.store.connection()
 	defer conn.Close()
 	if exist {
-		_, err = conn.Do("ZADD", l.name, float64(time.Now()), id)
+		_, err = conn.Do("ZADD", l.name, float64(time.Now().UnixNano()), id)
 	} else {
 		_, err = conn.Do("ZREM", l.name, id)
 	}

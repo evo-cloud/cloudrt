@@ -16,11 +16,11 @@ type acquisition struct {
 }
 
 func (a *acquisition) Acquired() bool {
-	return owner == ownedBy
+	return a.owner == a.ownedBy
 }
 
 func (a *acquisition) Owner() string {
-	return ownedBy
+	return a.ownedBy
 }
 
 func (a *acquisition) TTL() time.Duration {
@@ -30,7 +30,7 @@ func (a *acquisition) TTL() time.Duration {
 func (a *acquisition) Refresh(ttl time.Duration) error {
 	return a.mustOwned(func(conn redis.Conn) error {
 		conn.Send("MULTI")
-		conn.Send("PEXPIRE", key, dur2TTL(a.ttl))
+		conn.Send("PEXPIRE", a.key(), dur2TTL(a.ttl))
 		_, err := conn.Do("EXEC")
 		return err
 	})
@@ -39,7 +39,7 @@ func (a *acquisition) Refresh(ttl time.Duration) error {
 func (a *acquisition) Release() error {
 	return a.mustOwned(func(conn redis.Conn) error {
 		conn.Send("MULTI")
-		conn.Send("DEL", key)
+		conn.Send("DEL", a.key())
 		_, err := conn.Do("EXEC")
 		return err
 	})
@@ -58,7 +58,9 @@ func (a *acquisition) tryAcquire() error {
 		return err
 	}
 	if val != nil && len(val) == 2 {
-		a.ownedBy = redis.String(val[0], nil)
+		if ownedBy, e := redis.String(val[0], nil); e == nil {
+			a.ownedBy = ownedBy
+		}
 	}
 	if a.ownedBy != "" && a.ownedBy != a.owner {
 		_, err = conn.Do("DISCARD")
@@ -68,8 +70,7 @@ func (a *acquisition) tryAcquire() error {
 	conn.Send("HSET", key, "owner", a.owner)
 	conn.Send("HINCRBY", key, "refs", 1)
 	conn.Send("PEXPIRE", key, dur2TTL(a.ttl))
-	_, err := conn.Do("EXEC")
-	if err != nil {
+	if _, err = conn.Do("EXEC"); err != nil {
 		return err
 	}
 	ownedBy, err := redis.String(conn.Do("HGET", key, "owner"))

@@ -122,7 +122,7 @@ func (b *bucket) Remove(key string) (val jobs.Value, err error) {
 			ttl:  ttl2Dur(redis.Int64(conn.Do("PTTL", key))),
 		}
 	}
-	_, err = redis.Do("DEL", key)
+	_, err = conn.Do("DEL", key)
 	return
 }
 

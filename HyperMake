@@ -1,0 +1,103 @@
+---
+format: hypermake.v0
+
+name: cloudrt
+description: Cloud Runtime
+
+targets:
+    toolchain:
+        description: build the docker image including toolchain
+        watches:
+            - hack/toolchain
+        build: hack/toolchain
+
+    vendor:
+        description: pull all vendor packages
+        after:
+            - toolchain
+        watches:
+            - 'vendor/manifest'
+        cmds:
+            - gvt restore
+
+    build-linux-amd64:
+        description: binaries for Linux AMD64
+        after:
+            - vendor
+        watches:
+            - '**/**/*.go'
+            - hack/build.sh
+        cmds:
+            - hack/build.sh linux amd64
+
+    build-darwin-amd64:
+        description: binaries for Mac OS
+        after:
+            - vendor
+        watches:
+            - '**/**/*.go'
+            - hack/build.sh
+        cmds:
+            - hack/build.sh darwin amd64
+
+    build-windows-amd64:
+        description: binaries for Windows
+        after:
+            - vendor
+        watches:
+            - '**/**/*.go'
+            - hack/build.sh
+        cmds:
+            - hack/build.sh windows amd64
+
+    checkfmt:
+        description: check code format
+        after:
+            - toolchain
+        always: true
+        cmds:
+            - hack/build.sh checkfmt
+
+    lint:
+        description: check code using metalint
+        after:
+            - toolchain
+        always: true
+        cmds:
+            - hack/build.sh lint
+
+    check:
+        description: check source code
+        after:
+            - checkfmt
+            - lint
+
+    test:
+        description: run tests
+        after:
+            - vendor
+        always: true
+        cmds:
+            - go test ./jobs
+
+    cover:
+        description: run tests with coverage
+        after:
+            - vendor
+        always: true
+        cmds:
+            - go test -coverprofile cover.out
+              -coverpkg ./jobs
+              ./jobs
+
+    build:
+        description: build binaries
+        after:
+            - 'build-*'
+
+settings:
+    default-targets:
+        - build
+    docker:
+        image: cloudrt-builder:latest
+        src-volume: /go/src/github.com/evo-cloud/cloudrt

@@ -18,7 +18,6 @@ type Enumerable interface {
 
 // Value is abstract form of stored object
 type Value interface {
-	Valid() bool
 	TTL() time.Duration
 	Unmarshal(out interface{}) error
 }
