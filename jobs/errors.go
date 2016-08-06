@@ -40,7 +40,6 @@ const (
 	TaskErrIgnored TaskErrorType = iota // no error, same as success
 	TaskErrFail
 	TaskErrRetry
-	TaskErrRevert
 	TaskErrStuck
 )
 

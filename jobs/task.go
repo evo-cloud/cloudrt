@@ -23,7 +23,8 @@ type TaskResult int
 
 // Task results
 const (
-	TaskSuccess TaskResult = iota
+	TaskUnknown TaskResult = iota
+	TaskSuccess
 	TaskFailure
 	TaskAborted
 )
@@ -47,7 +48,8 @@ type Task struct {
 	Revert     bool        `json:"revert"`      // in rollback direction
 	Retries    uint        `json:"retries"`     // current retry number
 	MaxRetries uint        `json:"max-retries"` // max count of retries
-	Stage      string      `json:"stage"`       // stage resume to
+	Stage      string      `json:"stage"`       // current stage
+	ResumeTo   string      `json:"resume-to"`   // next stage resume to
 	Data       []byte      `json:"data"`        // task specific data
 	Output     []byte      `json:"output"`      // output when completed
 	Errors     []TaskError `json:"errors"`      // errors happened
@@ -170,8 +172,49 @@ type Stage struct {
 	Fn   TaskFn // task function
 }
 
+// EntryStage is the name of entry stage (the first one)
+const EntryStage = "entry"
+
 // TaskExec is the implemetation of the task
 type TaskExec struct {
 	Name   string  // name of the task
 	Stages []Stage // stages in the task
+}
+
+// TaskExecBuilder builds a TaskExec
+type TaskExecBuilder struct {
+	Dispatcher *Dispatcher
+	Executor   TaskExec
+
+	committed bool
+}
+
+// Stage adds stage into TaskExec
+func (b *TaskExecBuilder) Stage(name string, fn TaskFn) *TaskExecBuilder {
+	b.Executor.Stages = append(b.Executor.Stages, Stage{Name: name, Fn: fn})
+	return b
+}
+
+// Entry adds entry stage into TaskExec
+func (b *TaskExecBuilder) Entry(fn TaskFn) *TaskExecBuilder {
+	b.Executor.Stages = append([]Stage{{Name: EntryStage, Fn: fn}}, b.Executor.Stages...)
+	return b
+}
+
+// Commit adds TaskExec to dispatcher
+func (b *TaskExecBuilder) Commit() *Dispatcher {
+	if b.committed {
+		return b.Dispatcher
+	}
+	if len(b.Executor.Stages) == 0 {
+		panic("at least one stage is required for task " + b.Executor.Name)
+	}
+	b.Dispatcher.AddTaskExecs(&b.Executor)
+	b.committed = true
+	return b.Dispatcher
+}
+
+// NewTaskExec commits existing TaskExec and creates a new one
+func (b *TaskExecBuilder) NewTaskExec(name string) *TaskExecBuilder {
+	return b.Commit().NewTaskExec(name)
 }

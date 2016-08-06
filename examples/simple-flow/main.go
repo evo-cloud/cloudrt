@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 
 	jobs "github.com/evo-cloud/cloudrt/jobs"
 	store "github.com/evo-cloud/cloudrt/jobs/stores/redis"
@@ -58,36 +57,19 @@ func makeComponent(ctx jobs.Context) error {
 }
 
 func main() {
-	dispatcher := &jobs.Dispatcher{
-		Strategy: &strategy.Strategy{
-			Store: store.NewStore("localhost"),
-		},
-	}
+	s := store.NewStore("localhost")
+	dispatcher := jobs.NewDispatcher(s, &strategy.Strategy{Store: s})
 
 	// register task executors
-	dispatcher.AddTaskExecs(
-		&jobs.TaskExec{
-			Name: "process-obj",
-			Stages: []jobs.Stage{
-				{Name: "entry", Fn: createObj},
-				{Name: "process", Fn: processObj},
-			},
-		},
-		&jobs.TaskExec{
-			Name:   "make-component",
-			Stages: []jobs.Stage{{Fn: makeComponent}},
-		},
-	)
+	dispatcher.
+		NewTaskExec("process-job").Entry(createObj).Stage("process", processObj).
+		NewTaskExec("make-component").Entry(makeComponent).
+		Commit()
 
-	// start 4 workers
-	var wg sync.WaitGroup
+	dispatcher.Watcher("watcher")
+
 	for i := 0; i < 4; i++ {
-		worker := dispatcher.Worker(fmt.Sprintf("worker%d", i))
-		wg.Add(1)
-		go func() {
-			worker.Run()
-			wg.Done()
-		}()
+		dispatcher.Worker(fmt.Sprintf("worker%d", i))
 	}
 
 	dispatcher.NewJob().
@@ -97,5 +79,5 @@ func main() {
 			Build()).
 		Submit()
 
-	wg.Wait()
+	dispatcher.Run()
 }

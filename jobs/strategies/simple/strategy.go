@@ -54,7 +54,8 @@ type TaskDoc struct {
 	Revert     bool             `json:"revert"`      // in rollback direction
 	Retries    uint             `json:"retries"`     // current retry number
 	MaxRetries uint             `json:"max-retries"` // max count of retries
-	Stage      string           `json:"stage"`       // stage resume to
+	Stage      string           `json:"stage"`       // current stage
+	ResumeTo   string           `json:"resume-to"`   // next stage resume to
 	Data       json.RawMessage  `json:"data"`        // task specific data
 	Output     json.RawMessage  `json:"output"`      // output when completed
 	Errors     []jobs.TaskError `json:"errors"`      // errors happened
@@ -77,6 +78,7 @@ func NewTaskDoc(task *jobs.Task) *TaskDoc {
 		Retries:    task.Retries,
 		MaxRetries: task.MaxRetries,
 		Stage:      task.Stage,
+		ResumeTo:   task.ResumeTo,
 		Data:       json.RawMessage(task.Data),
 		Output:     json.RawMessage(task.Output),
 		Errors:     task.Errors,
@@ -100,6 +102,7 @@ func (d *TaskDoc) ToTask() *jobs.Task {
 		Retries:    d.Retries,
 		MaxRetries: d.MaxRetries,
 		Stage:      d.Stage,
+		ResumeTo:   d.ResumeTo,
 		Data:       []byte(d.Data),
 		Output:     []byte(d.Output),
 		Errors:     d.Errors,
@@ -116,6 +119,7 @@ const (
 	TaskStatsBucket = "task-stats"
 	CancelList      = "job-cancellation"
 	PendingList     = "task-pending"
+	WaitingList     = "task-waiting"
 )
 
 // SubmitJob implements Strategy
@@ -210,6 +214,7 @@ func (s *Strategy) saveTask(doc *TaskDoc, stats *jobs.TaskStats) (err error) {
 		return
 	}
 	s.Store.OrderedList(PendingList).Set(doc.ID, doc.State == jobs.TaskPending)
+	s.Store.OrderedList(WaitingList).Set(doc.ID, doc.State == jobs.TaskWaiting)
 	if stats != nil {
 		err = s.Store.Bucket(TaskStatsBucket).Put(doc.ID, stats, jobs.Infinite)
 	}
@@ -296,6 +301,7 @@ func (h *TaskHandle) Update(task *jobs.Task) (err error) {
 	}
 	doc := NewTaskDoc(h.CachedTask)
 	doc.Stage = task.Stage
+	doc.ResumeTo = task.ResumeTo
 	doc.State = task.State
 	doc.Result = task.Result
 	doc.Data = json.RawMessage(task.Data)

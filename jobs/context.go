@@ -51,6 +51,11 @@ func (c Context) ParentID() string {
 	return c.Task().ParentID
 }
 
+// StopCh returns the stopChan
+func (c Context) StopCh() StopChan {
+	return c.local.stopCh
+}
+
 // IsRollback determines if the task is in rollback direction
 func (c Context) IsRollback() bool {
 	return c.Task().Revert
@@ -96,7 +101,7 @@ func (c Context) SetOutput(p interface{}) (err error) {
 // ResumeTo specifies the next stage when sub tasks finish
 func (c Context) ResumeTo(stage string) error {
 	t := c.Task()
-	t.Stage = stage
+	t.ResumeTo = stage
 	return c.local.taskHandle().Update(&t)
 }
 
@@ -117,12 +122,6 @@ func (c Context) FailRetry(err error) *TaskError {
 	return t.NewError(TaskErrRetry).SetMessage("error").CausedBy(err)
 }
 
-// FailRollback creates a task error and rollback
-func (c Context) FailRollback(err error) *TaskError {
-	t := c.Task()
-	return t.NewError(TaskErrRevert).SetMessage("error, rollback").CausedBy(err)
-}
-
 // Stuck creates a stuck error
 func (c Context) Stuck(err error) *TaskError {
 	t := c.Task()
@@ -131,6 +130,7 @@ func (c Context) Stuck(err error) *TaskError {
 
 // SubmitTask implements TaskSubmitter
 func (c Context) SubmitTask(task *Task) error {
-	c.local.pushSubTask(*task)
-	return nil
+	task.JobID = c.JobID()
+	task.ParentID = c.TaskID()
+	return c.local.taskHandle().SubmitTask(task)
 }

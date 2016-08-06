@@ -1,42 +1,58 @@
 package jobs
 
-import (
-	"fmt"
-	"sync"
-)
-
-// Strategy is the contract for scheduling strategy
-type Strategy interface {
-	SubmitJob(*Job) error
-	CancelJob(id string) error
-	IsJobCanceling(id string) (bool, error)
-	QueryJob(id string) (*Job, error)
-	QueryTask(id string) (*Task, error)
-	NewWorker(id string) WorkerStrategy
-}
-
-// WorkerStrategy is strategy instance per worker
-type WorkerStrategy interface {
-	FetchTask() (TaskHandle, error)
-}
-
-// TaskHandle is the handle of a running task owned by a worker
-type TaskHandle interface {
-	Task() *Task
-	SubmitTask(*Task) error
-	Update(*Task) error
-	Done() error
-}
+import "sync"
 
 // Dispatcher submits jobs and executes tasks
 type Dispatcher struct {
+	Store    Store
 	Strategy Strategy
 	Tasks    []*TaskExec
+
+	workers   map[string]*runnerCtl
+	watchers  map[string]*runnerCtl
+	runners   []*runnerCtl
+	wgRunners sync.WaitGroup
+	lock      sync.Mutex
+}
+
+// StopChan is the chan delivering stop signal
+type StopChan <-chan struct{}
+
+// Runnable defines the generic background runner
+type Runnable interface {
+	Run(StopChan)
 }
 
 // Worker executes tasks
 type Worker interface {
-	Run()
+	Runnable
+}
+
+// Watcher watches the system and does house keeping
+type Watcher interface {
+	Runnable
+}
+
+type runnerCtl struct {
+	runner Runnable
+	stopCh chan struct{}
+}
+
+func newRunnerCtl(runner Runnable) *runnerCtl {
+	return &runnerCtl{runner: runner, stopCh: make(chan struct{})}
+}
+
+func (r *runnerCtl) run() {
+	r.runner.Run(r.stopCh)
+}
+
+func (r *runnerCtl) stop() {
+	close(r.stopCh)
+}
+
+// NewDispatcher creates a Dispatcher
+func NewDispatcher(store Store, strategy Strategy) *Dispatcher {
+	return &Dispatcher{Store: store, Strategy: strategy}
 }
 
 // NewJob starts creating a job
@@ -55,9 +71,95 @@ func (d *Dispatcher) AddTaskExecs(execs ...*TaskExec) {
 	d.Tasks = append(d.Tasks, execs...)
 }
 
-// Worker spawns a worker
+// NewTaskExec defines a new task executor
+func (d *Dispatcher) NewTaskExec(taskName string) *TaskExecBuilder {
+	return &TaskExecBuilder{Dispatcher: d, Executor: TaskExec{Name: taskName}}
+}
+
+// Worker creates a worker
 func (d *Dispatcher) Worker(id string) Worker {
-	return &localWorker{dispatcher: d, strategy: d.Strategy.NewWorker(id)}
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	if d.workers == nil {
+		d.workers = make(map[string]*runnerCtl)
+	}
+	rctl := d.workers[id]
+	if rctl == nil {
+		rctl = newRunnerCtl(&localWorker{
+			dispatcher: d,
+			strategy:   d.Strategy.NewWorker(id),
+		})
+		d.workers[id] = rctl
+	}
+	return rctl.runner.(Worker)
+}
+
+// Watcher creates a watcher
+func (d *Dispatcher) Watcher(id string) Watcher {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	if d.watchers == nil {
+		d.watchers = make(map[string]*runnerCtl)
+	}
+	rctl := d.watchers[id]
+	if rctl == nil {
+		rctl = newRunnerCtl(&localWatcher{
+			id:         id,
+			dispatcher: d,
+		})
+		d.watchers[id] = rctl
+	}
+	return rctl.runner.(Watcher)
+}
+
+// Start starts workers and background tasks
+func (d *Dispatcher) Start() *Dispatcher {
+	d.lock.Lock()
+	d.wgRunners = sync.WaitGroup{}
+	d.runners = make([]*runnerCtl, 0)
+	if d.workers != nil {
+		for _, rctl := range d.workers {
+			d.runners = append(d.runners, rctl)
+			d.wgRunners.Add(1)
+		}
+	}
+	if d.watchers != nil {
+		for _, rctl := range d.watchers {
+			d.runners = append(d.runners, rctl)
+			d.wgRunners.Add(1)
+		}
+	}
+	for _, rctl := range d.runners {
+		go func(r *runnerCtl) {
+			r.run()
+			d.wgRunners.Done()
+		}(rctl)
+	}
+	d.lock.Unlock()
+	return d
+}
+
+// Stop notifies workers and background tasks to exit
+func (d *Dispatcher) Stop() *Dispatcher {
+	d.lock.Lock()
+	for _, rctl := range d.runners {
+		rctl.stop()
+	}
+	d.lock.Unlock()
+	return d
+}
+
+// Wait waits until workers and background tasks complete
+func (d *Dispatcher) Wait() *Dispatcher {
+	d.wgRunners.Wait()
+	return d
+}
+
+// Run is equilavent to Start and Wait
+func (d *Dispatcher) Run() *Dispatcher {
+	d.Start()
+	d.Wait()
+	return d
 }
 
 // Task queries task by id
@@ -97,120 +199,6 @@ func (d *Dispatcher) findStage(name, stage string) *Stage {
 				return &s
 			}
 		}
-	}
-	return nil
-}
-
-type localWorker struct {
-	dispatcher *Dispatcher
-	strategy   WorkerStrategy
-}
-
-type localContext struct {
-	worker   *localWorker
-	handle   TaskHandle
-	subTasks []Task
-	lock     sync.Mutex
-}
-
-func (l *localContext) dispatcher() *Dispatcher {
-	return l.worker.dispatcher
-}
-
-func (l *localContext) taskHandle() TaskHandle {
-	return l.handle
-}
-
-func (l *localContext) strategy() Strategy {
-	return l.dispatcher().Strategy
-}
-
-func (l *localContext) pushSubTask(task Task) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	current := l.handle.Task()
-	task.JobID = current.JobID
-	task.ParentID = current.ID
-	l.subTasks = append(l.subTasks, task)
-}
-
-func (w *localWorker) Run() {
-	for {
-		handle, err := w.strategy.FetchTask()
-		if err == nil && handle != nil {
-			w.runTaskByHandle(handle)
-			handle.Done()
-		}
-	}
-}
-
-func (w *localWorker) runTaskByHandle(handle TaskHandle) {
-	ctx := Context{
-		local: &localContext{
-			worker: w,
-			handle: handle,
-		},
-	}
-
-	err := w.runTask(ctx)
-	if err != nil {
-		taskErr, ok := err.(*TaskError)
-		if !ok {
-			taskErr = ctx.Fail(err)
-		}
-		err = w.taskComplete(ctx, taskErr)
-	} else {
-		err = w.taskComplete(ctx, nil)
-	}
-	if err != nil {
-		// TODO
-	}
-}
-
-func (w *localWorker) runTask(ctx Context) error {
-	task := ctx.Task()
-	stage := w.dispatcher.findStage(task.Name, task.Stage)
-	if stage == nil {
-		return fmt.Errorf("invalid task/stage: %s/%s", task.Name, task.Stage)
-	}
-
-	if stage.Fn == nil {
-		return nil
-	}
-
-	return stage.Fn(ctx)
-}
-
-func (w *localWorker) taskComplete(ctx Context, taskErr *TaskError) error {
-	task := ctx.Task()
-	if taskErr != nil {
-		task.Errors = append(task.Errors, *taskErr)
-		switch taskErr.Type {
-		case TaskErrIgnored:
-			task.State = TaskCompleted
-			if task.Revert {
-				task.Result = TaskAborted
-			} else {
-				task.Result = TaskSuccess
-			}
-		case TaskErrFail:
-			// TODO
-		case TaskErrRetry:
-			// TODO
-		case TaskErrRevert:
-			// TODO
-		case TaskErrStuck:
-			task.State = TaskStucked
-		}
-		err := ctx.local.handle.Update(&task)
-		if err != nil {
-			return err
-		}
-	} else {
-		for _, subTask := range ctx.local.subTasks {
-			task.SubTaskIDs = append(task.SubTaskIDs, subTask.ID)
-		}
-		// TODO
 	}
 	return nil
 }
