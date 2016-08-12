@@ -57,8 +57,9 @@ func makeComponent(ctx jobs.Context) error {
 }
 
 func main() {
-	s := store.NewStore("localhost")
-	dispatcher := jobs.NewDispatcher(s, &strategy.Strategy{Store: s})
+	dispatcher := jobs.NewDispatcher(&strategy.Strategy{
+		Store: store.NewStore("localhost"),
+	})
 
 	// register task executors
 	dispatcher.

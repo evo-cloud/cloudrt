@@ -177,6 +177,12 @@ func (s *Strategy) NewWorker(id string) jobs.WorkerStrategy {
 	return &WorkerStrategy{WorkerID: id, Strategy: s}
 }
 
+// HouseKeep runs house keeping logic
+func (s *Strategy) HouseKeep(id string, logic jobs.HouseKeepLogic) error {
+	// TODO
+	return nil
+}
+
 func (s *Strategy) queryJobDoc(id string) (*JobDoc, error) {
 	val, err := s.Store.Bucket(JobsBucket).Get(id)
 	if err != nil || val == nil {

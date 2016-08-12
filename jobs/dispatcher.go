@@ -1,12 +1,15 @@
 package jobs
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 // Dispatcher submits jobs and executes tasks
 type Dispatcher struct {
-	Store    Store
-	Strategy Strategy
-	Tasks    []*TaskExec
+	Strategy          Strategy
+	Tasks             []*TaskExec
+	HouseKeepInterval time.Duration
 
 	workers   map[string]*runnerCtl
 	watchers  map[string]*runnerCtl
@@ -33,6 +36,9 @@ type Watcher interface {
 	Runnable
 }
 
+// HouseKeepInterval is the default setting
+var HouseKeepInterval = time.Second
+
 type runnerCtl struct {
 	runner Runnable
 	stopCh chan struct{}
@@ -51,8 +57,11 @@ func (r *runnerCtl) stop() {
 }
 
 // NewDispatcher creates a Dispatcher
-func NewDispatcher(store Store, strategy Strategy) *Dispatcher {
-	return &Dispatcher{Store: store, Strategy: strategy}
+func NewDispatcher(strategy Strategy) *Dispatcher {
+	return &Dispatcher{
+		Strategy:          strategy,
+		HouseKeepInterval: HouseKeepInterval,
+	}
 }
 
 // NewJob starts creating a job
